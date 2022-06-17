@@ -22,12 +22,24 @@ import com.hypertrack.sdk.TrackingStateObserver;
 
 import java.util.Locale;
 
+import com.hypertrack.sdk.views.HyperTrackViews;
+import androidx.core.util.Consumer;
+import com.google.gson.Gson;
+import com.hypertrack.sdk.views.DeviceUpdatesHandler;
+//import com.hypertrack.sdk.views.dao.Location;
+import com.hypertrack.sdk.views.dao.MovementStatus;
+import com.hypertrack.sdk.views.dao.StatusUpdate;
+import com.hypertrack.sdk.views.dao.Trip;
+import androidx.annotation.NonNull;
 
 @ReactModule(name = HTSDKModule.NAME)
 public class HTSDKModule extends ReactContextBaseJavaModule {
 
     public TrackingStateObserver.OnTrackingStateChangeListener trackingStateChangeListener;
     public HyperTrack sdkInstance;
+    public DeviceUpdatesHandler deviceUpdatesHandler;
+    public HyperTrackViews mHyperTrackView;
+    final Gson gson = new Gson();
 
     public HTSDKModule(ReactApplicationContext reactContext) {
         super(reactContext);
@@ -39,14 +51,16 @@ public class HTSDKModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void initialize(String publishableKey, Boolean startsTracking, Boolean automaticallyRequestPermissions, Promise promise) {
+    public void initialize(String publishableKey, Boolean startsTracking, Boolean automaticallyRequestPermissions,
+            Promise promise) {
         try {
             sdkInstance = HyperTrack.getInstance(
-                    publishableKey
-            ).backgroundTrackingRequirement(false);
+                    publishableKey).backgroundTrackingRequirement(false);
             if (startsTracking) {
                 sdkInstance.start();
             }
+            mHyperTrackView = HyperTrackViews.getInstance(getReactApplicationContext().getApplicationContext(),
+                    publishableKey);
             promise.resolve(true);
         } catch (java.lang.Exception exception) {
             Log.e(TAG, "Hypertrack SDK initialization failed.", exception);
@@ -90,6 +104,54 @@ public class HTSDKModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public void subscribeToDeviceUpdates(final Promise promise) {
+        if (deviceUpdatesHandler != null) {
+            mHyperTrackView.stopAllUpdates();
+            deviceUpdatesHandler = null;
+        }
+
+        mHyperTrackView.subscribeToDeviceUpdates(sdkInstance.getDeviceID(),
+                deviceUpdatesHandler = new DeviceUpdatesHandler() {
+
+                    public void onLocationUpdateReceived(@NonNull com.hypertrack.sdk.views.dao.Location location) {
+                        getReactApplicationContext()
+                                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                .emit("onLocationUpdateReceived", gson.toJson(location));
+                    }
+
+                    public void onBatteryStateUpdateReceived(@MovementStatus.BatteryState int i) {
+                        getReactApplicationContext()
+                                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                .emit("onBatteryStateUpdateReceived", i);
+                    }
+
+                    public void onStatusUpdateReceived(@NonNull StatusUpdate statusUpdate) {
+                        getReactApplicationContext()
+                                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                .emit("onStatusUpdateReceived", gson.toJson(statusUpdate));
+                    }
+
+                    public void onTripUpdateReceived(@NonNull Trip trip) {
+                        getReactApplicationContext()
+                                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                .emit("onTripUpdateReceived", gson.toJson(trip));
+                    }
+
+                    public void onError(Exception exception, String deviceId) {
+                        getReactApplicationContext()
+                                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                .emit("onErrorDeviceUpdates", exception);
+                    }
+
+                    public void onCompleted(String deviceId) {
+                        getReactApplicationContext()
+                                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                .emit("onCompletedDeviceUpdates", deviceId);
+                    }
+                });
+    }
+
+    @ReactMethod
     public void getDeviceID(Promise promise) {
         promise.resolve(sdkInstance.getDeviceID());
     }
@@ -98,7 +160,6 @@ public class HTSDKModule extends ReactContextBaseJavaModule {
     public void isTracking(Promise promise) {
         promise.resolve(sdkInstance.isRunning());
     }
-
 
     @ReactMethod
     public void startTracking() {
@@ -149,12 +210,15 @@ public class HTSDKModule extends ReactContextBaseJavaModule {
     }
 
     private Location expectedLocationFromMap(ReadableMap expectedLocation) {
-        if (!expectedLocation.hasKey(LATITUDE) || !expectedLocation.hasKey(LONGITUDE)) return null;
+        if (!expectedLocation.hasKey(LATITUDE) || !expectedLocation.hasKey(LONGITUDE))
+            return null;
         try {
             double latitude = expectedLocation.getDouble(LATITUDE);
             double longitude = expectedLocation.getDouble(LONGITUDE);
-            if (longitude > 180.0 || longitude < -180.0) return null;
-            if (latitude > 90.0 || latitude < -90.0) return null;
+            if (longitude > 180.0 || longitude < -180.0)
+                return null;
+            if (latitude > 90.0 || latitude < -90.0)
+                return null;
             Location expected = new Location("any");
             expected.setLatitude(latitude);
             expected.setLongitude(longitude);
