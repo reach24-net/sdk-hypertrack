@@ -138,9 +138,13 @@ public class HTSDKModule extends ReactContextBaseJavaModule {
                     }
 
                     public void onError(Exception exception, String deviceId) {
-                        getReactApplicationContext()
+                        try {
+                            getReactApplicationContext()
                                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                                 .emit("onErrorDeviceUpdates", exception);
+                        } catch (Exception e){
+                            Log.e("ReactNative", "Caught Exception: " + exception.getMessage());
+                        }
                     }
 
                     public void onCompleted(String deviceId) {
